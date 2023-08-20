@@ -1,16 +1,18 @@
 import datetime
 import logging
 import os
+import sys
 import traceback
 import typing
 
 import base64
 import zstd
-import png
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from typing import Any
+from PIL import Image
 
 class CustomBot(commands.Bot):
     _uptime: datetime.datetime = datetime.datetime.utcnow()
@@ -44,13 +46,93 @@ class CustomBot(commands.Bot):
     @property
     def uptime(self) -> datetime.timedelta:
         return datetime.datetime.utcnow() - self._uptime
-        
+
 class Blueprint:
     version: int
     checksum: bytearray
     width: int
     height: int
     logicImage: bytearray
+
+
+class LogicIcons:
+    _logicNames: list[str] = [
+        "and", "breakpoint", "buffer", "bus", "clock", "cross", "latchOff", "latchOn",
+        "led", "mesh", "nand", "nor", "not", "or", "random", "read", "timer", "tunnel",
+        "wireless1", "wireless2", "wireless3", "wireless4", "write", "xnor", "xor",
+    ]
+    _logicMap : dict[int, str] = {
+        0xFFC663: "and",
+        0xE00000: "breakpoint",
+        0x92FF63: "buffer",
+        0x7A7024: "bus",
+        0x24417A: "bus",
+        0x25627A: "bus",
+        0x3E7A24: "bus",
+        0x7A2D66: "bus",
+        0x7A2F24: "bus",
+        0xFF0041: "clock",
+        0x66788E: "cross",
+        0x384D47: "latchOff",
+        0x63FF9F: "latchOn",
+        0xFFFFFF: "led",
+        0x646A57: "mesh",
+        0xFFA200: "nand",
+        0x30D9FF: "nor",
+        0xFF628A: "not",
+        0x63F2FF: "or",
+        0xE5FF00: "random",
+        0x2E475D: "read",
+        0xFF6700: "timer",
+        0x535572: "tunnel",
+        0xFF00BF: "wireless1",
+        0xFF00AF: "wireless2",
+        0xFF009F: "wireless3",
+        0xFF008F: "wireless4",
+        0x4D383E: "write",
+        0xA600FF: "xnor",
+        0xAE74FF: "xor",
+    }
+
+    def __init__(self, imgDir: str):
+        self._images: dict[str, Image.Image] = {}
+        self._blendedImages: dict[str, Image.Image] = {}
+        self._resizedImages: dict[str, Image.Image] = {}
+        self._size: int = 0
+
+        for name in self._logicNames:
+            filename = os.path.join(imgDir, f"LogicIcons-{name}.png")
+            img = Image.open(filename)
+            self._images[name] = img
+
+        # Pre-process images for each color in the logic map
+        for color, ink in self._logicMap.items():
+            icon = self._images[ink]
+            tmp = Image.new("RGBA", icon.size)
+            # Fill the image with the RGB color
+            tmp.paste(Image.new("RGBA", icon.size, color=(color >> 16, (color >> 8) & 0xFF, color & 0xFF)), (0, 0))
+            self._blendedImages[color] = Image.blend(icon, tmp, 0.4)
+
+    def resize(self, size: int) -> None:
+        self._size = size
+        for name in self._blendedImages:
+            tmp = self._blendedImages[name].resize((size, size), Image.Resampling.BICUBIC)
+            self._resizedImages[name] = tmp
+
+    def addIcons(self, logic: list[bytearray], img: Image.Image, zoom: int) -> None:
+        for yItr in range(0, len(logic)):
+            row = logic[yItr]
+            for xItr in range(0, len(row), 1):
+                color = int.from_bytes(row[xItr*4 : xItr*4+3], "big")
+                if color not in self._logicMap:
+                    continue
+
+                icon = self._resizedImages[color]
+                x = xItr * zoom
+                y = yItr * zoom
+
+                img.alpha_composite(icon, (x, y))
+
 
 def parseBlueprint (blueprint):
     blueprint = blueprint.replace("```", "")
@@ -68,7 +150,7 @@ def parseBlueprint (blueprint):
     version = int.from_bytes(blueprint[0:3], "big")
     checksum = blueprint[3:9]
     width = int.from_bytes(blueprint[9:13], "big")
-    height = int.from_bytes(blueprint[13:17], "big")        
+    height = int.from_bytes(blueprint[13:17], "big")
     if version != 0:
         raise Exception("invalid vcb blueprint - unexpected version number: " + str(version))
     if width * height == 0:
@@ -81,7 +163,7 @@ def parseBlueprint (blueprint):
         imageSize = int.from_bytes(blueprint[curpos+8:curpos+12], "big")
         if blockSize < 12: # also prevents infinite loops on invalid data if blockSize is 0
             raise Exception("invalid vcb blueprint - invalid layer block size: " + str(blockSize))
-        if layerID == 0: # look for logic layer       
+        if layerID == 0: # look for logic layer
             try:
                 image = zstd.uncompress(blueprint[curpos+12:curpos+blockSize])
             except Exception:
@@ -121,10 +203,10 @@ def getstats(blueprint):
     tracecount = 0
     buscount = 0
     def percent (n, total):
-        return f" ({int(100.0 * n / total + 0.5)}%)" 
+        return f" ({int(100.0 * n / total + 0.5)}%)"
     def countMessage (name, counts, rgba):
-        nonlocal tracecount  
-        nonlocal buscount 
+        nonlocal tracecount
+        nonlocal buscount
         nonlocal totalmessage
         if rgba in counts and counts[rgba] > 0 and not (name.startswith("Bus") or name.startswith("Trace")):
             totalmessage.append(name + " pixels: " + str(counts[rgba]) + percent(counts[rgba], bp.width * bp.height) + ", ")
@@ -188,7 +270,7 @@ def getstats(blueprint):
     totalmessage.append("```")
     return totalmessage
 
-def render(blueprint):
+def render(blueprint: str, icons: LogicIcons) -> None:
 
     def fillBackground(image, width, height):
         image = bytearray(image)
@@ -220,34 +302,32 @@ def render(blueprint):
                         zimage[dsto+3] = pixel[3]
         return zimage
 
-    def saveImage(filename, image, width, height, zoom):
+    def saveImage(filename: str, logic: bytearray, width: int, height: int, zoom) -> None:
         zoom = int(zoom)
         if zoom < 1:
             zoom = 1
-        image = fillBackground(image, width, height)
+        image = fillBackground(logic, width, height)
         image = zoomImage(image, width, height, zoom)
-        width *= zoom
-        height *= zoom
-        # split to arrays of rows.
-        image = [image[i:i+4*width] for i in range(0, len(image), 4*width)] 
-        pngimage = png.from_array(image, "RGBA", {
-            "width": width,
-            "height": height,
-            "bitdepth": 8
-        })
-        pngimage.save(filename)
- 
-    bp = parseBlueprint(blueprint)
+        pimage = Image.frombytes("RGBA", (width * zoom, height * zoom), image)
 
-    zoom = int(800 / bp.width)
+        if zoom >= 6:
+            logic = [logic[i:i+4*width] for i in range(0, len(logic), 4*width)]
+            icons.resize(zoom)
+            icons.addIcons(logic, pimage, zoom)
+
+        pimage.save(filename)
+
+    bp = parseBlueprint(blueprint)
+    #zoom = int(800 / bp.width)
+    zoom = int(1400 / bp.width)
     if zoom < 1:
         zoom = 1
-    elif zoom > 16:
-        zoom = 16
+    elif zoom > 24:
+        zoom = 24
     saveImage("tempimage.png", bp.logicImage, bp.width, bp.height, zoom)
 
 def time():
-    time = str(datetime.datetime.utcnow()).replace(".",",") 
+    time = str(datetime.datetime.utcnow()).replace(".",",")
     time = "[" + str(time[0:23]) + "]"
     return time
 
@@ -261,10 +341,10 @@ async def extractBlueprintString (ctx: commands.Context, args):
                 blueprint = text
     # 2. if not found check for bp in attachment
     if blueprint == None and len(ctx.message.attachments) == 1:
-        blueprint = (await ctx.message.attachments[0].read()).decode()    
+        blueprint = (await ctx.message.attachments[0].read()).decode()
     # if not found, look in replied message...
     if blueprint == None and ctx.message.reference != None and ctx.message.reference.resolved != None:
-        # 3. check reply content 
+        # 3. check reply content
         if ctx.message.reference.resolved.content != "":
             for text in ctx.message.reference.resolved.content.split():
                 if text.startswith("VCB+") or text.startswith("```VCB+"):
@@ -276,7 +356,9 @@ async def extractBlueprintString (ctx: commands.Context, args):
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
-    bot = CustomBot(prefix="!", activity=discord.Game(name='!help to learn more'))
+    imgDir = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), "img")
+    icons = LogicIcons(imgDir)
+    bot: CustomBot = CustomBot(prefix="!", activity=discord.Game(name='!help to learn more'))
 
     @bot.command(aliases=['hi'])
     async def hello(ctx: commands.Context, *args):
@@ -288,7 +370,7 @@ def main() -> None:
     async def stats(ctx: commands.Context,  *blueprint):
         """
         makes a image of a blueprint
-                
+
         Parameters
         ----------
         blueprint
@@ -314,7 +396,7 @@ def main() -> None:
     async def image(ctx: commands.Context, *blueprint):
         """
         makes a image of a blueprint
-                
+
         Parameters
         ----------
         blueprint
@@ -329,7 +411,7 @@ def main() -> None:
             totalmessage.append("no blueprint specified")
         else:
             try:
-                render(blueprint)
+                render(blueprint, icons)
                 await ctx.send(file=discord.File("tempimage.png"))
             except Exception as x:
                 totalmessage.append(str(x))
@@ -341,7 +423,7 @@ def main() -> None:
     async def rtfm(ctx: commands.Context, *question):
         """
         finds pages in the userguide based on a input
-        
+
         Parameters
         ----------
         question
@@ -403,7 +485,7 @@ def main() -> None:
             "virtual devices virtual memory 1",
             "virtual devices virtual memory 2",
             "virtual devices virtual memory 3",
-            "virtual devices", 
+            "virtual devices",
         ]
         for item in guides:
             if " ".join(question).lower() in item:
@@ -420,7 +502,7 @@ def main() -> None:
             for founditems in totalmessage:
                 if question == founditems.replace(" ","_"):
                     await ctx.send(file=discord.File(founditems.replace(" ","_") + ".png"))
-                    matched = True  
+                    matched = True
             if matched == False:
                 await ctx.send("``` " + "\n ".join(totalmessage) + " ```")
         else:
