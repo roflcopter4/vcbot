@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 from PIL import Image
 
 
+MAX_ZOOM = 24
+
+
 class CustomBot(commands.Bot):
     _uptime: datetime.datetime = datetime.datetime.utcnow()
 
@@ -103,28 +106,28 @@ class LogicIcons:
     }
 
     def __init__(self, imgDir: str):
-        self._images: Dict[str, Image.Image] = {}
-        self._blendedImages: Dict[str, Image.Image] = {}
-        self._resizedImages: Dict[str, Image.Image] = {}
-        self._size: int = 0
+        self._resizedImages: List[Dict[str, Image.Image]] = []
+        images: Dict[str, Image.Image] = {}
+        blendedImages: Dict[str, Image.Image] = {}
 
         for name in self._logicNames:
             filename = os.path.join(imgDir, f"LogicIcons-{name}.png")
-            img = Image.open(filename)
-            self._images[name] = img
+            images[name] = Image.open(filename)
 
         # Pre-process images for each color in the logic map
         for color, ink in self._logicMap.items():
-            icon = self._images[ink]
+            icon = images[ink]
             tmp = Image.new("RGBA", icon.size)
             # Fill the image with the RGB color
             tmp.paste(Image.new("RGBA", icon.size, color=(color >> 16, (color >> 8) & 0xFF, color & 0xFF)), (0, 0))
-            self._blendedImages[color] = Image.blend(icon, tmp, 0.4)
+            blendedImages[color] = Image.blend(icon, tmp, 0.4)
 
-    def resize(self, size: int) -> None:
-        self._size = size
-        for name, img in self._blendedImages.items():
-            self._resizedImages[name] = img.resize((size, size), Image.Resampling.BICUBIC)
+        # Pre-render all the possible sizes we might need
+        for i in range(0, MAX_ZOOM):
+            tmp = {}
+            for name, img in blendedImages.items():
+                tmp[name] = img.resize((i+1, i+1), Image.Resampling.BICUBIC)
+            self._resizedImages.append(tmp)
 
     def addIcons(self, logic: List[bytearray], img: Image.Image, zoom: int) -> None:
         for yItr in range(0, len(logic)):
@@ -133,11 +136,9 @@ class LogicIcons:
                 color = int.from_bytes(row[xItr*4 : xItr*4+3], "big")
                 if color not in self._logicMap:
                     continue
-
-                icon = self._resizedImages[color]
+                icon = self._resizedImages[zoom-1][color]
                 x = xItr * zoom
                 y = yItr * zoom
-
                 img.alpha_composite(icon, (x, y))
 
 
@@ -323,7 +324,6 @@ def render(blueprint: str, icons: LogicIcons) -> None:
 
         if zoom >= 6:
             logic = [logic[i:i+4*width] for i in range(0, len(logic), 4*width)]
-            icons.resize(zoom)
             icons.addIcons(logic, pimage, zoom)
 
         pimage.save(filename)
@@ -331,10 +331,7 @@ def render(blueprint: str, icons: LogicIcons) -> None:
     bp = parseBlueprint(blueprint)
     #zoom = int(800 / bp.width)
     zoom = int(1400 / bp.width)
-    if zoom < 1:
-        zoom = 1
-    elif zoom > 24:
-        zoom = 24
+    zoom = min(max(zoom, 1), MAX_ZOOM)
     saveImage("tempimage.png", bp.logicImage, bp.width, bp.height, zoom)
 
 
