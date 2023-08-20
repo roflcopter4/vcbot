@@ -106,9 +106,9 @@ class LogicIcons:
     }
 
     def __init__(self, imgDir: str):
-        self._resizedImages: List[Dict[str, Image.Image]] = []
+        self._resizedImages: List[Dict[int, Image.Image]] = []
         images: Dict[str, Image.Image] = {}
-        blendedImages: Dict[str, Image.Image] = {}
+        blendedImages: Dict[int, Image.Image] = {}
 
         for name in self._logicNames:
             filename = os.path.join(imgDir, f"LogicIcons-{name}.png")
@@ -125,8 +125,8 @@ class LogicIcons:
         # Pre-render all the possible sizes we might need
         for i in range(0, MAX_ZOOM):
             tmp = {}
-            for name, img in blendedImages.items():
-                tmp[name] = img.resize((i+1, i+1), Image.Resampling.BICUBIC)
+            for color, img in blendedImages.items():
+                tmp[color] = img.resize((i+1, i+1), Image.Resampling.BICUBIC)
             self._resizedImages.append(tmp)
 
     def addIcons(self, logic: List[bytearray], img: Image.Image, zoom: int) -> None:
