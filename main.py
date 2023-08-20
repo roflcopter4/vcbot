@@ -14,23 +14,24 @@ from dotenv import load_dotenv
 from typing import Any
 from PIL import Image
 
+
 class CustomBot(commands.Bot):
     _uptime: datetime.datetime = datetime.datetime.utcnow()
 
-    def __init__(self, prefix: str, *args: typing.Any, **kwargs: typing.Any) -> None:
+    def __init__(self, prefix: str, *args: Any, **kwargs: Any) -> None:
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
         super().__init__(*args, **kwargs, command_prefix=commands.when_mentioned_or(prefix), intents=intents)
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    async def on_error(self, event_method: str, *args: typing.Any, **kwargs: typing.Any) -> None:
+    async def on_error(self, event_method: str, *args: Any, **kwargs: Any) -> None:
         self.logger.error(f"An error occurred in {event_method}.\n{traceback.format_exc()}")
 
     async def on_ready(self) -> None:
         self.logger.info(f"Logged in as {self.user} ({self.user.id})")
 
-    def run(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+    def run(self, *args: Any, **kwargs: Any) -> None:
         load_dotenv()
         try:
             super().run(str(os.getenv("TOKEN")), *args, **kwargs)
@@ -140,7 +141,7 @@ class LogicIcons:
                 img.alpha_composite(icon, (x, y))
 
 
-def parseBlueprint (blueprint):
+def parseBlueprint(blueprint: str) -> Blueprint:
     blueprint = blueprint.replace("```", "")
     blueprint = blueprint.replace("\'", "")
     if not blueprint.startswith("VCB+") and not blueprint.startswith("bVCB+"):
@@ -188,7 +189,8 @@ def parseBlueprint (blueprint):
     bp.logicImage = image
     return bp
 
-def getstats(blueprint):
+
+def getstats(blueprint: str):
     bp = parseBlueprint(blueprint)
     # count pixels in blueprint
     image = bp.logicImage
@@ -208,8 +210,10 @@ def getstats(blueprint):
     totalmessage.append("-----------\n")
     tracecount = 0
     buscount = 0
+
     def percent (n, total):
         return f" ({int(100.0 * n / total + 0.5)}%)"
+
     def countMessage (name, counts, rgba):
         nonlocal tracecount
         nonlocal buscount
@@ -220,6 +224,7 @@ def getstats(blueprint):
             tracecount += counts[rgba]
         elif name.startswith("Bus") and rgba in counts:
             buscount += counts[rgba]
+
     countMessage("Cross", counts, (102, 120, 142, 255))
     countMessage("Tunnel", counts, (83, 85, 114, 255))
     countMessage("Mesh", counts, (100, 106, 87, 255))
@@ -276,9 +281,9 @@ def getstats(blueprint):
     totalmessage.append("```")
     return totalmessage
 
-def render(blueprint: str, icons: LogicIcons) -> None:
 
-    def fillBackground(image, width, height):
+def render(blueprint: str, icons: LogicIcons) -> None:
+    def fillBackground(image, width: int, height: int) -> bytearray:
         image = bytearray(image)
         for offset in range(0, 4*width*height, 4):
             if image[offset+3] == 0:
@@ -288,7 +293,7 @@ def render(blueprint: str, icons: LogicIcons) -> None:
                 image[offset+3] = 255
         return image
 
-    def zoomImage(image, width, height, zoom):
+    def zoomImage(image: bytearray, width: int, height: int, zoom: int) -> bytearray:
         if zoom == 1:
             return image
         zimage = bytearray(4 * width * height * zoom * zoom)
@@ -332,12 +337,14 @@ def render(blueprint: str, icons: LogicIcons) -> None:
         zoom = 24
     saveImage("tempimage.png", bp.logicImage, bp.width, bp.height, zoom)
 
-def time():
+
+def time() -> str:
     time = str(datetime.datetime.utcnow()).replace(".",",")
     time = "[" + str(time[0:23]) + "]"
     return time
 
-async def extractBlueprintString (ctx: commands.Context, args):
+
+async def extractBlueprintString(ctx: commands.Context, args) -> str:
     """extract blueprint string from appropriate source"""
     blueprint = None
     # 1. first check for bp in args
@@ -359,6 +366,7 @@ async def extractBlueprintString (ctx: commands.Context, args):
         if blueprint == None and len(ctx.message.reference.resolved.attachments) == 1:
             blueprint = (await ctx.message.reference.resolved.attachments[0].read()).decode()
     return blueprint
+
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
@@ -516,6 +524,7 @@ def main() -> None:
                 await ctx.send(file=discord.File(image.replace(" ","_") + ".png"))
 
     bot.run()
+
 
 if __name__ == "__main__":
     main()
