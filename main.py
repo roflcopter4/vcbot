@@ -55,6 +55,12 @@ class Blueprint:
     logicImage: bytearray
 
 
+class InvalidBlueprintException(Exception):
+    """Thrown in case of a bad VCB blueprint."""
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+
 class LogicIcons:
     _logicNames: list[str] = [
         "and", "breakpoint", "buffer", "bus", "clock", "cross", "latchOff", "latchOn",
@@ -138,7 +144,7 @@ def parseBlueprint (blueprint):
     blueprint = blueprint.replace("```", "")
     blueprint = blueprint.replace("\'", "")
     if not blueprint.startswith("VCB+") and not blueprint.startswith("bVCB+"):
-        raise Exception("invalid vcb blueprint - header error")
+        raise InvalidBlueprintException("Invalid vcb blueprint - header error")
     if blueprint.startswith("VCB+"):
         blueprint = blueprint[4:] # strip the VCB+
     if blueprint.startswith("bVCB+"):
@@ -146,15 +152,15 @@ def parseBlueprint (blueprint):
     try:
         blueprint = base64.b64decode(blueprint)
     except Exception:
-        raise Exception("invalid vcb blueprint - base64 error")
+        raise InvalidBlueprintException("Invalid vcb blueprint - base64 error")
     version = int.from_bytes(blueprint[0:3], "big")
     checksum = blueprint[3:9]
     width = int.from_bytes(blueprint[9:13], "big")
     height = int.from_bytes(blueprint[13:17], "big")
     if version != 0:
-        raise Exception("invalid vcb blueprint - unexpected version number: " + str(version))
+        raise InvalidBlueprintException("Invalid vcb blueprint - unexpected version number: " + str(version))
     if width * height == 0:
-        raise Exception("invalid vcb blueprint - blueprint is 0x0")
+        raise InvalidBlueprintException("Invalid vcb blueprint - blueprint is 0x0")
     curpos = 17
     image = None
     while curpos < len(blueprint):
@@ -162,15 +168,15 @@ def parseBlueprint (blueprint):
         layerID = int.from_bytes(blueprint[curpos+4:curpos+8], "big")
         imageSize = int.from_bytes(blueprint[curpos+8:curpos+12], "big")
         if blockSize < 12: # also prevents infinite loops on invalid data if blockSize is 0
-            raise Exception("invalid vcb blueprint - invalid layer block size: " + str(blockSize))
+            raise InvalidBlueprintException("Invalid vcb blueprint - invalid layer block size: " + str(blockSize))
         if layerID == 0: # look for logic layer
             try:
                 image = zstd.uncompress(blueprint[curpos+12:curpos+blockSize])
             except Exception:
-                raise Exception("invalid vcb blueprint - zstd error")
+                raise InvalidBlueprintException("Invalid vcb blueprint - zstd error")
             # validate uncompressed data length
             if len(image) != imageSize:
-                raise Exception("invalid vcb blueprint - unexpected image size: " + str(imageSize))
+                raise InvalidBlueprintException("Invalid vcb blueprint - unexpected image size: " + str(imageSize))
         # advance to next block
         curpos += blockSize
     # pack into a Blueprint and return
@@ -363,26 +369,26 @@ def main() -> None:
     @bot.command(aliases=['hi'])
     async def hello(ctx: commands.Context, *args):
         """says hi :)"""
-        print(time() + " INFO: user \"" + str(ctx.author.name) + "\" used: !hello / !hi")
-        await ctx.send("hello! "+ str(ctx.author.mention))
+        print(time() + " INFO: User \"" + str(ctx.author.name) + "\" used: !hello / !hi")
+        await ctx.send("Hello! "+ str(ctx.author.mention))
 
     @bot.command(aliases=['statistics'])
     async def stats(ctx: commands.Context,  *blueprint):
         """
-        makes a image of a blueprint
+        Makes a image of a blueprint
 
         Parameters
         ----------
         blueprint
-             : any blueprint either a file or text (can reply to a meesage for a image of that blueprint aswell)
+             : Any blueprint either a file or text (can reply to a meesage for a image of that blueprint aswell)
         """
-        print(time() + " INFO: user \"" + str(ctx.author.name) + "\" used: !stats")
+        print(time() + " INFO: User \"" + str(ctx.author.name) + "\" used: !stats")
         # extract blueprint string from appropriate source
         blueprint = await extractBlueprintString(ctx, blueprint)
         # build stats/error message
         totalmessage = []
         if blueprint == None:
-            totalmessage.append("no blueprint specified")
+            totalmessage.append("No blueprint specified")
         else:
             try:
                 totalmessage = getstats(blueprint)
@@ -395,12 +401,12 @@ def main() -> None:
     @commands.has_permissions(attach_files=True)
     async def image(ctx: commands.Context, *blueprint):
         """
-        makes a image of a blueprint
+        Makes a image of a blueprint
 
         Parameters
         ----------
         blueprint
-             : any blueprint either a file or text (can reply to a meesage for a image of that blueprint aswell)
+             : Any blueprint either a file or text (can reply to a meesage for a image of that blueprint aswell)
         """
         print(time() + " INFO: user \"" + str(ctx.author.name) + "\" used: !image")
         # extract blueprint string from appropriate source
@@ -408,7 +414,7 @@ def main() -> None:
         # render blueprint and send image
         totalmessage = []
         if blueprint == None:
-            totalmessage.append("no blueprint specified")
+            totalmessage.append("No blueprint specified")
         else:
             try:
                 render(blueprint, icons)
@@ -422,14 +428,14 @@ def main() -> None:
     @bot.command(aliases=['guide','manual'])
     async def rtfm(ctx: commands.Context, *question):
         """
-        finds pages in the userguide based on a input
+        Finds pages in the userguide based on a input
 
         Parameters
         ----------
         question
-             : the thing you are looking for
+             : The thing you are looking for
         """
-        print(time() + " INFO: user \"" + str(ctx.author.name) + "\" used: !rtfm "+" ".join(question))
+        print(time() + " INFO: User \"" + str(ctx.author.name) + "\" used: !rtfm "+" ".join(question))
         totalmessage = []
         guides = [
             "appendix blueprint specification",
@@ -491,11 +497,11 @@ def main() -> None:
             if " ".join(question).lower() in item:
                 totalmessage.append(str(item))
         if question == ():
-            await ctx.send("please provide a query")
+            await ctx.send("Please provide a query")
         elif len(totalmessage) == 0:
-            await ctx.send("sorry i couldnt find anything in the user guide")
+            await ctx.send("Sorry, I couldnt find anything in the user guide")
         elif len(totalmessage) >= 16:
-            await ctx.send("please be more specific")
+            await ctx.send("Please be more specific")
         elif len(totalmessage) >= 5:
             matched = False
             question = "_".join(question).lower()
