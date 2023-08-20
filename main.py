@@ -132,7 +132,7 @@ class LogicIcons:
     def addIcons(self, logic: List[bytearray], img: Image.Image, zoom: int) -> None:
         for yItr in range(0, len(logic)):
             row = logic[yItr]
-            for xItr in range(0, len(row), 1):
+            for xItr in range(0, len(row)):
                 color = int.from_bytes(row[xItr*4 : xItr*4+3], "big")
                 if color not in self._logicMap:
                     continue
@@ -222,7 +222,8 @@ def getstats(blueprint: str):
         nonlocal buscount
         nonlocal totalmessage
         if rgba in counts and counts[rgba] > 0 and not (name.startswith("Bus") or name.startswith("Trace")):
-            totalmessage.append(name + " pixels: " + str(counts[rgba]) + percent(counts[rgba], bp.width * bp.height) + ", ")
+            pct = percent(counts[rgba], bp.width * bp.height)
+            totalmessage.append(name + " pixels: " + str(counts[rgba]) + pct + ", ")
         elif name.startswith("Trace")  and rgba in counts:
             tracecount += counts[rgba]
         elif name.startswith("Bus") and rgba in counts:
@@ -317,7 +318,6 @@ def render(blueprint: str, icons: LogicIcons) -> None:
         return zimage
 
     def saveImage(filename: str, logic: bytearray, width: int, height: int, zoom) -> None:
-        zoom = max(int(zoom), 1)
         image = fillBackground(logic, width, height)
         image = zoomImage(image, width, height, zoom)
         pimage = Image.frombytes("RGBA", (width * zoom, height * zoom), image)
