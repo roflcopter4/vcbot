@@ -4,6 +4,7 @@ import os
 import sys
 import traceback
 import typing
+from typing import Any, Dict, List, Tuple
 
 import base64
 import zstd
@@ -11,7 +12,6 @@ import zstd
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from typing import Any, Dict, List, Tuple
 from PIL import Image
 
 
@@ -37,7 +37,7 @@ class CustomBot(commands.Bot):
             super().run(str(os.getenv("TOKEN")), *args, **kwargs)
         except (discord.LoginFailure, KeyboardInterrupt):
             self.logger.info("Exiting...")
-            exit()
+            sys.exit()
 
     @property
     def user(self) -> discord.ClientUser:
@@ -123,9 +123,8 @@ class LogicIcons:
 
     def resize(self, size: int) -> None:
         self._size = size
-        for name in self._blendedImages:
-            tmp = self._blendedImages[name].resize((size, size), Image.Resampling.BICUBIC)
-            self._resizedImages[name] = tmp
+        for name, img in self._blendedImages.items():
+            self._resizedImages[name] = img.resize((size, size), Image.Resampling.BICUBIC)
 
     def addIcons(self, logic: List[bytearray], img: Image.Image, zoom: int) -> None:
         for yItr in range(0, len(logic)):
@@ -317,9 +316,7 @@ def render(blueprint: str, icons: LogicIcons) -> None:
         return zimage
 
     def saveImage(filename: str, logic: bytearray, width: int, height: int, zoom) -> None:
-        zoom = int(zoom)
-        if zoom < 1:
-            zoom = 1
+        zoom = max(int(zoom), 1)
         image = fillBackground(logic, width, height)
         image = zoomImage(image, width, height, zoom)
         pimage = Image.frombytes("RGBA", (width * zoom, height * zoom), image)
@@ -342,13 +339,13 @@ def render(blueprint: str, icons: LogicIcons) -> None:
 
 
 def time() -> str:
-    time = str(datetime.datetime.utcnow()).replace(".",",")
-    time = "[" + str(time[0:23]) + "]"
-    return time
+    timeStr = str(datetime.datetime.utcnow()).replace(".",",")
+    timeStr = "[" + str(timeStr[0:23]) + "]"
+    return timeStr
 
 
 async def extractBlueprintString(ctx: commands.Context, args: List[str]) -> str:
-    """extract blueprint string from appropriate source"""
+    """Extract blueprint string from appropriate source"""
     blueprint = None
     # 1. first check for bp in args
     if len(args) >= 1:
@@ -356,17 +353,17 @@ async def extractBlueprintString(ctx: commands.Context, args: List[str]) -> str:
             if text.startswith("VCB+") or text.startswith("```VCB+"):
                 blueprint = text
     # 2. if not found check for bp in attachment
-    if blueprint == None and len(ctx.message.attachments) == 1:
+    if blueprint is None and len(ctx.message.attachments) == 1:
         blueprint = (await ctx.message.attachments[0].read()).decode()
     # if not found, look in replied message...
-    if blueprint == None and ctx.message.reference != None and ctx.message.reference.resolved != None:
+    if blueprint is None and ctx.message.reference is not None and ctx.message.reference.resolved is not None:
         # 3. check reply content
         if ctx.message.reference.resolved.content != "":
             for text in ctx.message.reference.resolved.content.split():
                 if text.startswith("VCB+") or text.startswith("```VCB+"):
                     blueprint = text
         # 4. if still no blueprint found, then check attachment
-        if blueprint == None and len(ctx.message.reference.resolved.attachments) == 1:
+        if blueprint is None and len(ctx.message.reference.resolved.attachments) == 1:
             blueprint = (await ctx.message.reference.resolved.attachments[0].read()).decode()
     return blueprint
 
@@ -379,7 +376,7 @@ def main() -> None:
 
     @bot.command(aliases=['hi'])
     async def hello(ctx: commands.Context, *args):
-        """says hi :)"""
+        """Says hi :)"""
         print(time() + " INFO: User \"" + str(ctx.author.name) + "\" used: !hello / !hi")
         await ctx.send("Hello! "+ str(ctx.author.mention))
 
@@ -398,12 +395,12 @@ def main() -> None:
         blueprint = await extractBlueprintString(ctx, blueprint)
         # build stats/error message
         totalmessage = []
-        if blueprint == None:
+        if blueprint is None:
             totalmessage.append("No blueprint specified")
         else:
             try:
                 totalmessage = getstats(blueprint)
-            except Exception as x:
+            except InvalidBlueprintException as x:
                 totalmessage.append(str(x))
         # send the message
         await ctx.send(" ".join(totalmessage))
@@ -424,16 +421,16 @@ def main() -> None:
         blueprint = await extractBlueprintString(ctx, blueprint)
         # render blueprint and send image
         totalmessage = []
-        if blueprint == None:
+        if blueprint is None:
             totalmessage.append("No blueprint specified")
         else:
             try:
                 render(blueprint, icons)
                 await ctx.send(file=discord.File("tempimage.png"))
-            except Exception as x:
+            except InvalidBlueprintException as x:
                 totalmessage.append(str(x))
         # send any error messages
-        if totalmessage != []:
+        if totalmessage:
             await ctx.send(" ".join(totalmessage))
 
     @bot.command(aliases=['guide','manual'])
@@ -507,7 +504,7 @@ def main() -> None:
         for item in guides:
             if " ".join(question).lower() in item:
                 totalmessage.append(str(item))
-        if question == ():
+        if not question:
             await ctx.send("Please provide a query")
         elif len(totalmessage) == 0:
             await ctx.send("Sorry, I couldnt find anything in the user guide")
@@ -520,7 +517,7 @@ def main() -> None:
                 if question == founditems.replace(" ","_"):
                     await ctx.send(file=discord.File(founditems.replace(" ","_") + ".png"))
                     matched = True
-            if matched == False:
+            if not matched:
                 await ctx.send("``` " + "\n ".join(totalmessage) + " ```")
         else:
             for image in totalmessage:
