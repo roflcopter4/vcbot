@@ -11,14 +11,14 @@ import zstd
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, Dict, List, Tuple
 from PIL import Image
 
 
 class CustomBot(commands.Bot):
     _uptime: datetime.datetime = datetime.datetime.utcnow()
 
-    def __init__(self, prefix: str, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, prefix: str, *args: Any, **kwargs: Any):
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
@@ -48,6 +48,7 @@ class CustomBot(commands.Bot):
     def uptime(self) -> datetime.timedelta:
         return datetime.datetime.utcnow() - self._uptime
 
+
 class Blueprint:
     version: int
     checksum: bytearray
@@ -58,17 +59,17 @@ class Blueprint:
 
 class InvalidBlueprintException(Exception):
     """Thrown in case of a bad VCB blueprint."""
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
 
 class LogicIcons:
-    _logicNames: list[str] = [
+    _logicNames: List[str] = [
         "and", "breakpoint", "buffer", "bus", "clock", "cross", "latchOff", "latchOn",
         "led", "mesh", "nand", "nor", "not", "or", "random", "read", "timer", "tunnel",
         "wireless1", "wireless2", "wireless3", "wireless4", "write", "xnor", "xor",
     ]
-    _logicMap : dict[int, str] = {
+    _logicMap: Dict[int, str] = {
         0xFFC663: "and",
         0xE00000: "breakpoint",
         0x92FF63: "buffer",
@@ -102,9 +103,9 @@ class LogicIcons:
     }
 
     def __init__(self, imgDir: str):
-        self._images: dict[str, Image.Image] = {}
-        self._blendedImages: dict[str, Image.Image] = {}
-        self._resizedImages: dict[str, Image.Image] = {}
+        self._images: Dict[str, Image.Image] = {}
+        self._blendedImages: Dict[str, Image.Image] = {}
+        self._resizedImages: Dict[str, Image.Image] = {}
         self._size: int = 0
 
         for name in self._logicNames:
@@ -126,7 +127,7 @@ class LogicIcons:
             tmp = self._blendedImages[name].resize((size, size), Image.Resampling.BICUBIC)
             self._resizedImages[name] = tmp
 
-    def addIcons(self, logic: list[bytearray], img: Image.Image, zoom: int) -> None:
+    def addIcons(self, logic: List[bytearray], img: Image.Image, zoom: int) -> None:
         for yItr in range(0, len(logic)):
             row = logic[yItr]
             for xItr in range(0, len(row), 1):
@@ -191,6 +192,8 @@ def parseBlueprint(blueprint: str) -> Blueprint:
 
 
 def getstats(blueprint: str):
+    rgba_t = Tuple[int,int,int,int]
+
     bp = parseBlueprint(blueprint)
     # count pixels in blueprint
     image = bp.logicImage
@@ -202,7 +205,7 @@ def getstats(blueprint: str):
             counts[rgb] = (counts[rgb] if rgb in counts else 0) + 1
             area = area + 1
     # build result message
-    totalmessage = []
+    totalmessage: List[str] = []
     totalmessage.append("```\n")
     totalmessage.append("checksum: " + bp.checksum.hex() + "\n")
     totalmessage.append("width:    " + str(bp.width) + "\n")
@@ -211,10 +214,10 @@ def getstats(blueprint: str):
     tracecount = 0
     buscount = 0
 
-    def percent (n, total):
+    def percent(n, total):
         return f" ({int(100.0 * n / total + 0.5)}%)"
 
-    def countMessage (name, counts, rgba):
+    def countMessage(name: str, counts: Dict[rgba_t,int], rgba: rgba_t):
         nonlocal tracecount
         nonlocal buscount
         nonlocal totalmessage
@@ -344,7 +347,7 @@ def time() -> str:
     return time
 
 
-async def extractBlueprintString(ctx: commands.Context, args) -> str:
+async def extractBlueprintString(ctx: commands.Context, args: List[str]) -> str:
     """extract blueprint string from appropriate source"""
     blueprint = None
     # 1. first check for bp in args
@@ -372,7 +375,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s")
     imgDir = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), "img")
     icons = LogicIcons(imgDir)
-    bot: CustomBot = CustomBot(prefix="!", activity=discord.Game(name='!help to learn more'))
+    bot = CustomBot(prefix="!", activity=discord.Game(name='!help to learn more'))
 
     @bot.command(aliases=['hi'])
     async def hello(ctx: commands.Context, *args):
@@ -381,7 +384,7 @@ def main() -> None:
         await ctx.send("Hello! "+ str(ctx.author.mention))
 
     @bot.command(aliases=['statistics'])
-    async def stats(ctx: commands.Context,  *blueprint):
+    async def stats(ctx: commands.Context, *blueprint):
         """
         Makes a image of a blueprint
 
